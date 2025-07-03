@@ -67,45 +67,14 @@ module.exports = {
     // 1回のチェックで取得する最大動画数
     maxVideosToCheck: 5,
 
-    // 通知設定
-    notification: {
-        // Display Components V2を使用するかどうか
-        useDisplayComponents: process.env.USE_DISPLAY_COMPONENTS === 'true' || true, // デフォルトはtrue
-        
-        // フォールバック設定（Display Componentsが失敗した場合）
-        fallbackToLegacy: process.env.FALLBACK_TO_LEGACY === 'true' || true,
-        
-        // サムネイル画像を通知に含めるかどうか
-        includeThumbnail: process.env.INCLUDE_THUMBNAIL === 'true' || true,
-        
-        // 説明文の最大文字数
-        maxDescriptionLength: parseInt(process.env.MAX_DESCRIPTION_LENGTH) || 200,
-        
-        // デバッグモード（詳細なログ出力）
-        debugMode: process.env.NOTIFICATION_DEBUG === 'true' || false
-    },
-
     // 監視する配信者リスト
     streamers: [
         {
-            name: "しけお",
+            name: "しけお/CKO-ゲーム実況-",
             platform: "youtube", // youtube, twitch
             channelId: "UCU2-bJN1yP-G4KuXzVipFPA", // YouTubeチャンネルID
             notificationChannelId: "1385170391227437166", // Discord通知チャンネルID
-            customMessage: "", // カスタムメッセージ (オプション)
-            mentionRole: "", // メンション対象ロールID (オプション)
-            
-            // Display Components固有設定
-            displaySettings: {
-                // この配信者のみDisplay Componentsを無効にする場合
-                forceDisableDisplayComponents: false,
-                
-                // カスタムサムネイルURL（指定した場合、チャンネルのデフォルトサムネイルの代わりに使用）
-                customThumbnailUrl: "",
-                
-                // 通知スタイル（'minimal', 'standard', 'detailed'）
-                notificationStyle: 'standard'
-            }
+            mentionRole: "" // メンション対象ロールID (オプション)
         },
         // 必要に応じて追加
     ],
@@ -120,27 +89,6 @@ module.exports = {
     logging: {
         level: process.env.LOG_LEVEL || 'info',
         file: process.env.LOG_FILE || './logs/bot.log'
-    },
-
-    // データベース設定 (SQLite)
-    database: {
-        path: process.env.DB_PATH || './data/notifications.db'
-    },
-
-    // インタラクション設定
-    interactions: {
-        // 通知設定ボタンの有効時間（ミリ秒）
-        buttonTimeout: 30 * 60 * 1000, // 30分
-        
-        // 通知設定を許可するロール
-        allowedRoles: [
-            // ロールIDを追加
-        ],
-        
-        // 管理者専用機能を使用できるロール
-        adminRoles: [
-            // 管理者ロールIDを追加
-        ]
     }
 };
 
@@ -192,17 +140,6 @@ function validateConfig() {
 
     if (!module.exports.streamers || module.exports.streamers.length === 0) {
         throw new Error('監視する配信者が設定されていません');
-    }
-
-    // Display Components設定の検証
-    if (module.exports.notification.useDisplayComponents) {
-        console.log('✅ Display Components V2を使用します');
-        
-        if (module.exports.notification.fallbackToLegacy) {
-            console.log('✅ フォールバック機能が有効です（従来形式への自動切替）');
-        }
-    } else {
-        console.log('⚠️  従来のActionRow形式を使用します');
     }
 
     return true;

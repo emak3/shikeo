@@ -1,5 +1,5 @@
 // main.js
-const { Client, GatewayIntentBits, InteractionType } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
 const config = require('./config/config.js');
 const YouTubeService = require('./services/YouTubeService.js');
 const NotificationHandler = require('./handlers/NotificationHandler.js');
@@ -37,20 +37,8 @@ class StreamerNotificationBot {
         this.client.once('ready', async () => {
             logger.info(`${this.client.user.tag} としてログインしました`);
 
-            // 通知設定のログ出力
-            if (config.notification.useDisplayComponents) {
-                logger.info('✅ Display Components V2を使用します');
-            } else {
-                logger.info('⚠️ 従来のActionRow形式を使用します');
-            }
-
             // 定期チェックを開始
             await this.startPeriodicCheck();
-        });
-
-        // インタラクション処理を追加
-        this.client.on('interactionCreate', async (interaction) => {
-            await this.handleInteraction(interaction);
         });
 
         this.client.on('error', (error) => {
@@ -107,7 +95,11 @@ class StreamerNotificationBot {
                     const isNew = await this.notificationHandler.isNewContent(video.id);
 
                     if (isNew) {
-                        await this.sendNotificationWithFallback(streamer, video);
+                        await this.notificationHandler.sendNotification(
+                            streamer.notificationChannelId,
+                            video,
+                            streamer
+                        );
 
                         await this.notificationHandler.markAsSent(video.id, streamer.name, streamer.platform);
                         logger.info(`新しい動画を通知しました: ${video.title}`);
@@ -116,64 +108,6 @@ class StreamerNotificationBot {
             }
         } catch (error) {
             logger.error(`配信者 ${streamer.name} のコンテンツチェックでエラー:`, error);
-        }
-    }
-
-    /**
-     * フォールバック機能付きの通知送信
-     * @param {Object} streamer - 配信者情報
-     * @param {Object} video - 動画情報
-     */
-    async sendNotificationWithFallback(streamer, video) {
-        try {
-            // Display Componentsが無効、または配信者設定で無効になっている場合
-            if (!config.notification.useDisplayComponents ||
-                streamer.displaySettings?.forceDisableDisplayComponents) {
-
-                if (config.notification.debugMode) {
-                    logger.debug(`従来形式で通知送信: ${streamer.name} - ${video.title}`);
-                }
-
-                await this.notificationHandler.sendLegacyNotification(
-                    streamer.notificationChannelId,
-                    video,
-                    streamer
-                );
-                return;
-            }
-
-            // Display Componentsでの通知を試行
-            try {
-                if (config.notification.debugMode) {
-                    logger.debug(`Display Componentsで通知送信: ${streamer.name} - ${video.title}`);
-                }
-
-                await this.notificationHandler.sendNotification(
-                    streamer.notificationChannelId,
-                    video,
-                    streamer
-                );
-
-            } catch (displayError) {
-                logger.warn('Display Components通知が失敗:', displayError.message);
-
-                // フォールバック機能が有効な場合、従来形式で再試行
-                if (config.notification.fallbackToLegacy) {
-                    logger.info('従来形式にフォールバックして通知を再送信します');
-
-                    await this.notificationHandler.sendLegacyNotification(
-                        streamer.notificationChannelId,
-                        video,
-                        streamer
-                    );
-                } else {
-                    throw displayError; // フォールバックが無効な場合はエラーを再スロー
-                }
-            }
-
-        } catch (error) {
-            logger.error(`通知送信エラー (${streamer.name}):`, error);
-            throw error;
         }
     }
 
