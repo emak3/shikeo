@@ -1,5 +1,5 @@
 // main.js
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, InteractionType } = require('discord.js');
 const config = require('./config/config.js');
 const YouTubeService = require('./services/YouTubeService.js');
 const NotificationHandler = require('./handlers/NotificationHandler.js');
@@ -11,7 +11,8 @@ class StreamerNotificationBot {
             intents: [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
-                GatewayIntentBits.MessageContent
+                GatewayIntentBits.MessageContent,
+                GatewayIntentBits.GuildMembers // ロール操作に必要
             ]
         });
 
@@ -36,9 +37,15 @@ class StreamerNotificationBot {
     setupDiscordEvents() {
         this.client.once('ready', async () => {
             logger.info(`${this.client.user.tag} としてログインしました`);
+            logger.info('ロールボタン機能が有効です');
 
             // 定期チェックを開始
             await this.startPeriodicCheck();
+        });
+
+        // インタラクション処理
+        this.client.on('interactionCreate', async (interaction) => {
+            await this.handleInteraction(interaction);
         });
 
         this.client.on('error', (error) => {
@@ -55,6 +62,50 @@ class StreamerNotificationBot {
             logger.info('シャットダウン処理を開始します...');
             this.gracefulShutdown();
         });
+    }
+
+    /**
+     * インタラクション処理
+     * @param {Object} interaction - Discordインタラクション
+     */
+    async handleInteraction(interaction) {
+        try {
+            // ボタンインタラクションの処理
+            if (interaction.type === InteractionType.MessageComponent) {
+                // ロールボタンのインタラクション
+                if (this.notificationHandler.isRoleToggleInteraction(interaction)) {
+                    await this.notificationHandler.handleRoleToggle(interaction);
+                    return;
+                }
+            }
+
+            // 将来的にスラッシュコマンドなどを追加する場合はここに処理を追加
+            if (interaction.type === InteractionType.ApplicationCommand) {
+                logger.debug(`スラッシュコマンド受信: ${interaction.commandName}`);
+            }
+
+        } catch (error) {
+            logger.error('インタラクション処理エラー:', error);
+            
+            // エラーレスポンス
+            const errorMessage = 'インタラクション処理中にエラーが発生しました。';
+            
+            try {
+                if (interaction.replied || interaction.deferred) {
+                    await interaction.followUp({
+                        content: errorMessage,
+                        ephemeral: true
+                    });
+                } else {
+                    await interaction.reply({
+                        content: errorMessage,
+                        ephemeral: true
+                    });
+                }
+            } catch (responseError) {
+                logger.error('エラーレスポンス送信失敗:', responseError);
+            }
+        }
     }
 
     async startPeriodicCheck() {

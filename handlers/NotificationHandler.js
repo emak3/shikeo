@@ -1,6 +1,12 @@
 // handlers/NotificationHandler.js
 const Database = require('../utils/database.js');
 const logger = require('../utils/logger.js');
+const {
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    MessageFlags
+} = require('discord.js');
 
 class NotificationHandler {
     constructor(client) {
@@ -39,12 +45,12 @@ class NotificationHandler {
     }
 
     /**
-     * シンプルなDiscord通知を送信
-     * @param {string} channelId - 通知先チャンネルID
-     * @param {Object} content - コンテンツ情報
-     * @param {Object} streamer - 配信者情報
-     * @returns {Promise<void>}
-     */
+  * ロールボタン付きのDiscord通知を送信
+  * @param {string} channelId - 通知先チャンネルID
+  * @param {Object} content - コンテンツ情報
+  * @param {Object} streamer - 配信者情報
+  * @returns {Promise<void>}
+  */
     async sendNotification(channelId, content, streamer) {
         try {
             const channel = await this.client.channels.fetch(channelId);
@@ -54,12 +60,22 @@ class NotificationHandler {
                 return;
             }
 
-            // シンプルなメッセージを作成
+            // メッセージ内容を作成
             const messageContent = this.createSimpleMessage(content, streamer);
 
-            await channel.send({
+            // ボタンを作成
+            const components = this.createRoleButton(streamer);
+
+            const messageData = {
                 content: messageContent
-            });
+            };
+
+            // ロールボタンがある場合のみ追加
+            if (components.length > 0) {
+                messageData.components = components;
+            }
+
+            await channel.send(messageData);
 
             logger.info(`通知を送信しました: ${content.title} (チャンネル: ${channel.name})`);
 
@@ -103,6 +119,102 @@ class NotificationHandler {
         message += content.url;
 
         return message;
+    }
+
+    /**
+     * ロールボタンを作成
+     * @param {Object} streamer - 配信者情報
+     * @returns {Array} ボタンコンポーネント配列
+     */
+    createRoleButton(streamer) {
+        // メンションロールが設定されていない場合はボタンなし
+        if (!streamer.mentionRole) {
+            return [];
+        }
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`toggle_role_${streamer.mentionRole}`)
+                    .setLabel(`🔔 ${streamer.name}通知 ON/OFF`)
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+        return [row];
+    }
+
+    /**
+     * ロールボタンのインタラクションを処理
+     * @param {Object} interaction - Discordインタラクション
+     * @returns {Promise<void>}
+     */
+    async handleRoleToggle(interaction) {
+        try {
+            // カスタムIDからロールIDを取得
+            const roleId = interaction.customId.replace('toggle_role_', '');
+
+            const guild = interaction.guild;
+            const member = interaction.member;
+            const role = guild.roles.cache.get(roleId);
+
+            if (!role) {
+                await interaction.reply({
+                    content: '❌ ロールが見つかりませんでした。',
+                    flags: MessageFlags.Ephemeral
+                });
+                return;
+            }
+
+            // ユーザーが既にロールを持っているかチェック
+            const hasRole = member.roles.cache.has(roleId);
+
+            if (hasRole) {
+                // ロールを削除
+                await member.roles.remove(role);
+                await interaction.reply({
+                    content: `🔕 **${role.name}** の通知を無効にしました。`,
+                    flags: MessageFlags.Ephemeral
+                });
+                logger.info(`ロール削除: ${member.user.tag} から ${role.name} を削除`);
+            } else {
+                // ロールを付与
+                await member.roles.add(role);
+                await interaction.reply({
+                    content: `🔔 **${role.name}** の通知を有効にしました！`,
+                    flags: MessageFlags.Ephemeral
+                });
+                logger.info(`ロール付与: ${member.user.tag} に ${role.name} を付与`);
+            }
+
+        } catch (error) {
+            logger.error('ロールトグル処理エラー:', error);
+
+            // エラーレスポンス
+            const errorMessage = error.code === 50013 ?
+                '❌ ボットにロールを操作する権限がありません。' :
+                '❌ ロールの操作に失敗しました。';
+
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp({
+                    content: errorMessage,
+                    flags: MessageFlags.Ephemeral
+                });
+            } else {
+                await interaction.reply({
+                    content: errorMessage,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        }
+    }
+
+    /**
+     * ロールボタンのインタラクションかどうかを判定
+     * @param {Object} interaction - Discordインタラクション
+     * @returns {boolean} ロールボタンの場合true
+     */
+    isRoleToggleInteraction(interaction) {
+        return interaction.customId && interaction.customId.startsWith('toggle_role_');
     }
 }
 

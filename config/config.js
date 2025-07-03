@@ -74,7 +74,7 @@ module.exports = {
             platform: "youtube", // youtube, twitch
             channelId: "UCU2-bJN1yP-G4KuXzVipFPA", // YouTubeチャンネルID
             notificationChannelId: "1385170391227437166", // Discord通知チャンネルID
-            mentionRole: "" // メンション対象ロールID (オプション)
+            mentionRole: "1390358527821873152" // メンション対象ロールID (オプション)
         },
         // 必要に応じて追加
     ],
@@ -89,6 +89,20 @@ module.exports = {
     logging: {
         level: process.env.LOG_LEVEL || 'info',
         file: process.env.LOG_FILE || './logs/bot.log'
+    },
+
+    // ロールボタン設定
+    roleButton: {
+        // ロールボタンの有効時間（ミリ秒）
+        buttonTimeout: 24 * 60 * 60 * 1000,
+
+        // ロール操作を許可するチャンネル（空の場合は全てのチャンネルで許可）
+        allowedChannels: [
+
+        ],
+
+        // ロール操作のログを有効にするかどうか
+        enableRoleLog: true
     }
 };
 
@@ -142,6 +156,10 @@ function validateConfig() {
         throw new Error('監視する配信者が設定されていません');
     }
 
+    const streamersWithRoles = module.exports.streamers.filter(s => s.mentionRole);
+    if (streamersWithRoles.length > 0) {
+        console.log(`✅ ロールボタン機能が有効です (${streamersWithRoles.length}人の配信者)`);
+    }
     return true;
 }
 
