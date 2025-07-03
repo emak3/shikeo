@@ -111,7 +111,7 @@ class NotificationHandler {
 
         // ロールメンション
         if (streamer.mentionRole) {
-            message += `<@&${streamer.mentionRole}> `;
+            message += `<@&${streamer.mentionRole}>\n`;
         }
 
         // 動画URL
@@ -137,7 +137,7 @@ class NotificationHandler {
                 new ButtonBuilder()
                     .setCustomId(`toggle_role_${streamer.mentionRole}`)
                     .setLabel(`🔔 ${streamer.name}通知 ON/OFF`)
-                    .setStyle(ButtonStyle.Primary)
+                    .setStyle(ButtonStyle.Secondary)
             );
 
         return [row];
