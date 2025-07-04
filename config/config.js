@@ -73,8 +73,8 @@ module.exports = {
             name: "しけお/CKO-ゲーム実況-",
             platform: "youtube", // youtube, twitch
             channelId: "UCU2-bJN1yP-G4KuXzVipFPA", // YouTubeチャンネルID
-            notificationChannelId: "1385170391227437166", // Discord通知チャンネルID
-            mentionRole: "1390358527821873152" // メンション対象ロールID (オプション)
+            notificationChannelId: "1271897953912750120", // Discord通知チャンネルID
+            mentionRole: "1390492864504402042" // メンション対象ロールID (オプション)
         },
         // 必要に応じて追加
     ],
