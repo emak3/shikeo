@@ -15,30 +15,72 @@ class NotificationHandler {
     }
 
     /**
-     * コンテンツが新しいかどうかチェック
-     * @param {string} contentId - コンテンツID (動画IDなど)
-     * @returns {Promise<boolean>} 新しいコンテンツの場合true
+     * 動画の状態を判定
+     * @param {Object} video - 動画情報
+     * @returns {string} 状態 ('upcoming', 'live', 'video')
      */
-    async isNewContent(contentId) {
+    getVideoStatus(video) {
+        if (video.isLive) return 'live';
+        if (video.isUpcoming) return 'upcoming';
+        return 'video';
+    }
+
+    /**
+     * コンテンツが通知すべきかチェック（状態変化も考慮）
+     * @param {string} contentId - コンテンツID
+     * @param {Object} video - 動画情報
+     * @returns {Promise<{shouldNotify: boolean, notificationType: string, statusChanged: boolean}>}
+     */
+    async shouldNotify(contentId, video) {
         try {
-            const exists = await this.database.checkIfSent(contentId);
-            return !exists;
+            const currentStatus = this.getVideoStatus(video);
+
+            // 新しいチェックメソッドを使用
+            const checkResult = await this.database.checkNotificationStatus(contentId, currentStatus);
+
+            // 動画状態を更新
+            await this.database.updateVideoStatus(contentId, currentStatus, {
+                title: video.title,
+                streamerName: '', // 後で設定される
+                platform: 'youtube'
+            });
+
+            return {
+                shouldNotify: checkResult.shouldNotify,
+                notificationType: checkResult.notificationType,
+                statusChanged: checkResult.statusChanged,
+                previousStatus: checkResult.previousStatus
+            };
+
         } catch (error) {
-            logger.error('新規コンテンツチェックエラー:', error);
-            return false;
+            logger.error('通知判定チェックエラー:', error);
+            return { shouldNotify: false, notificationType: 'initial', statusChanged: false };
         }
     }
 
     /**
-     * 送信済みとしてマーク
+     * 送信済みとしてマーク（状態変化の場合は別ドキュメントIDで記録）
      * @param {string} contentId - コンテンツID
      * @param {string} streamerName - 配信者名
      * @param {string} platform - プラットフォーム
+     * @param {Object} video - 動画情報
+     * @param {string} notificationType - 通知タイプ
      * @returns {Promise<void>}
      */
-    async markAsSent(contentId, streamerName = '', platform = '') {
+    async markAsSent(contentId, streamerName = '', platform = '', video = {}, notificationType = 'initial') {
         try {
-            await this.database.markAsSent(contentId, streamerName, platform);
+            const status = this.getVideoStatus(video);
+
+            // 通知タイプに応じてドキュメントIDを決定
+            let docId = contentId;
+            if (notificationType === 'status_change') {
+                docId = `${contentId}_live_status_change`;
+            }
+
+            await this.database.markAsSent(docId, streamerName, platform, status, notificationType);
+
+            logger.debug(`送信済みマーク: ${docId} (${notificationType})`);
+
         } catch (error) {
             logger.error('送信済みマークエラー:', error);
         }
@@ -49,9 +91,10 @@ class NotificationHandler {
   * @param {string} channelId - 通知先チャンネルID
   * @param {Object} content - コンテンツ情報
   * @param {Object} streamer - 配信者情報
+  * @param {string} notificationType - 通知タイプ ('initial', 'status_change')
   * @returns {Promise<void>}
   */
-    async sendNotification(channelId, content, streamer) {
+    async sendNotification(channelId, content, streamer, notificationType = 'initial') {
         try {
             const channel = await this.client.channels.fetch(channelId);
 
@@ -61,7 +104,7 @@ class NotificationHandler {
             }
 
             // メッセージ内容を作成
-            const messageContent = this.createSimpleMessage(content, streamer);
+            const messageContent = this.createMessage(content, streamer, notificationType);
 
             // ボタンを作成
             const components = this.createRoleButton(streamer);
@@ -77,7 +120,8 @@ class NotificationHandler {
 
             await channel.send(messageData);
 
-            logger.info(`通知を送信しました: ${content.title} (チャンネル: ${channel.name})`);
+            const notificationTypeText = notificationType === 'status_change' ? '(状態変化)' : '';
+            logger.info(`通知を送信しました${notificationTypeText}: ${content.title} (チャンネル: ${channel.name})`);
 
         } catch (error) {
             logger.error('Discord通知送信エラー:', error);
@@ -88,11 +132,20 @@ class NotificationHandler {
     /**
      * コンテンツタイプのヘッダーを取得
      * @param {Object} content - コンテンツ情報
+     * @param {string} notificationType - 通知タイプ
      * @returns {string} ヘッダーテキスト
      */
-    getContentTypeHeader(content) {
+    getContentTypeHeader(content, notificationType = 'initial') {
+        // 状態変化の通知の場合
+        if (notificationType === 'status_change') {
+            if (content.isLive) {
+                return '**🔴 ライブ配信開始** しました！';
+            }
+        }
+
+        // 初回通知の場合
         if (content.isLive) {
-            return '**🔴 ライブ配信開始** しました。';
+            return '**🔴 ライブ配信開始** しました！';
         } else if (content.isUpcoming) {
             return '**⏰ 配信予定** を立てました。';
         } else {
@@ -101,12 +154,13 @@ class NotificationHandler {
     }
 
     /**
-     * シンプルなメッセージ内容を作成
+     * メッセージ内容を作成
      * @param {Object} content - コンテンツ情報
      * @param {Object} streamer - 配信者情報
+     * @param {string} notificationType - 通知タイプ
      * @returns {string} メッセージ内容
      */
-    createSimpleMessage(content, streamer) {
+    createMessage(content, streamer, notificationType = 'initial') {
         let message = '';
 
         // ロールメンション
@@ -114,8 +168,14 @@ class NotificationHandler {
             message += `<@&${streamer.mentionRole}>\n`;
         }
 
+        // 状態変化の場合は特別なメッセージ
+        if (notificationType === 'status_change') {
+            message += `${streamer.name} の配信予定が **ライブ配信開始** しました！\n`;
+        } else {
+            message += `${streamer.name} が ${this.getContentTypeHeader(content, notificationType)}\n`;
+        }
+
         // 動画URL
-        message += `${streamer.name} が ${this.getContentTypeHeader(content)}\n`;
         message += content.url;
 
         return message;

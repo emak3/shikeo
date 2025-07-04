@@ -23,7 +23,7 @@ class Database {
             }
 
             this.db = admin.firestore();
-            
+
             // Firestoreの設定
             this.db.settings({
                 timestampsInSnapshots: true
@@ -43,13 +43,72 @@ class Database {
     getCollections() {
         return {
             sentNotifications: this.db.collection('sent_notifications'),
+            videoStatus: this.db.collection('video_status'), // 新しいコレクション
             streamers: this.db.collection('streamers'),
             errorLogs: this.db.collection('error_logs')
         };
     }
 
     /**
-     * コンテンツが既に送信済みかチェック
+     * コンテンツの通知判定をチェック（状態も考慮）
+     * @param {string} contentId - コンテンツID
+     * @param {string} currentStatus - 現在の状態 ('upcoming', 'live', 'video')
+     * @returns {Promise<{shouldNotify: boolean, statusChanged: boolean, previousStatus: string|null, notificationType: string}>}
+     */
+    async checkNotificationStatus(contentId, currentStatus = 'video') {
+        try {
+            const { sentNotifications, videoStatus } = this.getCollections();
+
+            // 動画状態履歴をチェック
+            const statusDoc = await videoStatus.doc(contentId).get();
+            const previousStatus = statusDoc.exists ? statusDoc.data().status : null;
+
+            // 状態変化を検出
+            const statusChanged = previousStatus && previousStatus !== currentStatus;
+
+            // 初回通知の送信履歴をチェック
+            const initialSentDoc = await sentNotifications.doc(contentId).get();
+
+            // 状態変化通知の送信履歴をチェック（配信予定→ライブの場合）
+            const statusChangeSentDoc = await sentNotifications.doc(`${contentId}_live_status_change`).get();
+
+            // 通知すべきかを判定
+            let shouldNotify = false;
+            let notificationType = 'initial';
+
+            if (!initialSentDoc.exists) {
+                // 初回通知（まだ一度も通知していない）
+                shouldNotify = true;
+                notificationType = 'initial';
+            } else if (statusChanged && previousStatus === 'upcoming' && currentStatus === 'live') {
+                // 配信予定 → ライブ配信開始の状態変化
+                if (!statusChangeSentDoc.exists) {
+                    // 状態変化通知をまだ送信していない
+                    shouldNotify = true;
+                    notificationType = 'status_change';
+                }
+            }
+
+            return {
+                shouldNotify,
+                statusChanged,
+                previousStatus,
+                notificationType
+            };
+
+        } catch (error) {
+            logger.error('通知状態チェックエラー:', error);
+            return {
+                shouldNotify: false,
+                statusChanged: false,
+                previousStatus: null,
+                notificationType: 'initial'
+            };
+        }
+    }
+
+    /**
+     * 後方互換性のためのメソッド（既存コードとの互換性維持）
      * @param {string} contentId - コンテンツID
      * @returns {Promise<boolean>} 送信済みの場合true
      */
@@ -65,25 +124,100 @@ class Database {
     }
 
     /**
-     * 送信済みとしてマーク
+     * 動画の状態を記録/更新
      * @param {string} contentId - コンテンツID
-     * @param {string} streamerName - 配信者名
-     * @param {string} platform - プラットフォーム
+     * @param {string} status - 動画の状態 ('upcoming', 'live', 'video')
+     * @param {Object} videoInfo - 動画情報
      * @returns {Promise<void>}
      */
-    async markAsSent(contentId, streamerName = '', platform = '') {
+    async updateVideoStatus(contentId, status, videoInfo = {}) {
+        try {
+            const { videoStatus } = this.getCollections();
+
+            await videoStatus.doc(contentId).set({
+                contentId,
+                status,
+                title: videoInfo.title || '',
+                streamerName: videoInfo.streamerName || '',
+                platform: videoInfo.platform || '',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                // 初回記録の場合のみcreatedAtを設定
+                ...(!(await videoStatus.doc(contentId).get()).exists && {
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                })
+            }, { merge: true });
+
+            logger.debug(`動画状態を更新: ${contentId} -> ${status}`);
+
+        } catch (error) {
+            logger.error('動画状態更新エラー:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 送信済みとしてマーク（ドキュメントIDを直接指定）
+     * @param {string} docId - ドキュメントID
+     * @param {string} streamerName - 配信者名
+     * @param {string} platform - プラットフォーム
+     * @param {string} status - 動画の状態
+     * @param {string} notificationType - 通知タイプ ('initial', 'status_change')
+     * @returns {Promise<void>}
+     */
+    async markAsSent(docId, streamerName = '', platform = '', status = 'video', notificationType = 'initial') {
         try {
             const { sentNotifications } = this.getCollections();
-            await sentNotifications.doc(contentId).set({
-                contentId,
+
+            await sentNotifications.doc(docId).set({
+                contentId: docId.includes('_') ? docId.split('_')[0] : docId, // 元の動画IDを記録
+                docId: docId, // 実際のドキュメントID
                 streamerName,
                 platform,
+                status,
+                notificationType,
                 sentAt: admin.firestore.FieldValue.serverTimestamp(),
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
+
+            logger.debug(`送信履歴を記録: ${docId} (${notificationType})`);
+
         } catch (error) {
             logger.error('送信済みマークエラー:', error);
             throw error;
+        }
+    }
+
+    /**
+     * 特定の動画の状態履歴を取得
+     * @param {string} contentId - コンテンツID
+     * @returns {Promise<Array>} 状態履歴
+     */
+    async getVideoStatusHistory(contentId) {
+        try {
+            const { videoStatus, sentNotifications } = this.getCollections();
+
+            // 状態履歴と通知履歴を並列取得
+            const [statusDoc, notificationSnapshot] = await Promise.all([
+                videoStatus.doc(contentId).get(),
+                sentNotifications.where('contentId', '==', contentId)
+                    .orderBy('sentAt', 'desc')
+                    .get()
+            ]);
+
+            const history = {
+                currentStatus: statusDoc.exists ? statusDoc.data() : null,
+                notifications: notificationSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data(),
+                    sentAt: doc.data().sentAt?.toDate()
+                }))
+            };
+
+            return history;
+
+        } catch (error) {
+            logger.error('動画状態履歴取得エラー:', error);
+            return { currentStatus: null, notifications: [] };
         }
     }
 
@@ -96,7 +230,7 @@ class Database {
         try {
             const { streamers } = this.getCollections();
             const docId = `${streamer.platform}_${streamer.channelId}`;
-            
+
             await streamers.doc(docId).set({
                 name: streamer.name,
                 platform: streamer.platform,
@@ -144,35 +278,49 @@ class Database {
         try {
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-            
-            const { sentNotifications, errorLogs } = this.getCollections();
-            
+
+            const { sentNotifications, videoStatus, errorLogs } = this.getCollections();
+
             // 古い送信済み通知を削除
             const oldNotifications = await sentNotifications
                 .where('createdAt', '<', cutoffDate)
                 .get();
-            
+
             const batch1 = this.db.batch();
             oldNotifications.docs.forEach(doc => {
                 batch1.delete(doc.ref);
             });
-            
+
             if (!oldNotifications.empty) {
                 await batch1.commit();
+            }
+
+            // 古い動画状態記録を削除
+            const oldVideoStatus = await videoStatus
+                .where('createdAt', '<', cutoffDate)
+                .get();
+
+            const batch2 = this.db.batch();
+            oldVideoStatus.docs.forEach(doc => {
+                batch2.delete(doc.ref);
+            });
+
+            if (!oldVideoStatus.empty) {
+                await batch2.commit();
             }
 
             // 古いエラーログを削除
             const oldErrorLogs = await errorLogs
                 .where('createdAt', '<', cutoffDate)
                 .get();
-            
-            const batch2 = this.db.batch();
+
+            const batch3 = this.db.batch();
             oldErrorLogs.docs.forEach(doc => {
-                batch2.delete(doc.ref);
+                batch3.delete(doc.ref);
             });
-            
+
             if (!oldErrorLogs.empty) {
-                await batch2.commit();
+                await batch3.commit();
             }
 
             logger.info(`データベースクリーンアップ完了 (${daysToKeep}日以上古い記録を削除)`);
@@ -188,8 +336,8 @@ class Database {
      */
     async getStats() {
         try {
-            const { sentNotifications, streamers, errorLogs } = this.getCollections();
-            
+            const { sentNotifications, streamers, errorLogs, videoStatus } = this.getCollections();
+
             // 24時間前の時刻を計算
             const yesterday = new Date();
             yesterday.setHours(yesterday.getHours() - 24);
@@ -199,19 +347,25 @@ class Database {
                 totalNotificationsSnapshot,
                 recentNotificationsSnapshot,
                 totalStreamersSnapshot,
-                recentErrorsSnapshot
+                recentErrorsSnapshot,
+                totalVideoStatusSnapshot,
+                liveVideosSnapshot
             ] = await Promise.all([
                 sentNotifications.get(),
                 sentNotifications.where('sentAt', '>', yesterday).get(),
                 streamers.get(),
-                errorLogs.where('createdAt', '>', yesterday).get()
+                errorLogs.where('createdAt', '>', yesterday).get(),
+                videoStatus.get(),
+                videoStatus.where('status', '==', 'live').get()
             ]);
 
             return {
                 totalNotifications: totalNotificationsSnapshot.size,
                 recentNotifications: recentNotificationsSnapshot.size,
                 totalStreamers: totalStreamersSnapshot.size,
-                totalErrors: recentErrorsSnapshot.size
+                totalErrors: recentErrorsSnapshot.size,
+                totalTrackedVideos: totalVideoStatusSnapshot.size,
+                currentLiveStreams: liveVideosSnapshot.size
             };
         } catch (error) {
             logger.error('統計情報取得エラー:', error);
@@ -253,7 +407,7 @@ class Database {
         try {
             const { streamers } = this.getCollections();
             const snapshot = await streamers.get();
-            
+
             return snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data(),

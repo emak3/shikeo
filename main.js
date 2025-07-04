@@ -1,5 +1,6 @@
 // main.js
 const { Client, GatewayIntentBits, InteractionType } = require('discord.js');
+const cron = require('node-cron');
 const config = require('./config/config.js');
 const YouTubeService = require('./services/YouTubeService.js');
 const NotificationHandler = require('./handlers/NotificationHandler.js');
@@ -21,6 +22,7 @@ class StreamerNotificationBot {
         this.notificationHandler = new NotificationHandler(this.client);
         this.rssService = new RssService(this.client);
         this.checkInterval = null;
+        this.cronTask = null;
     }
 
     async initialize() {
@@ -40,6 +42,7 @@ class StreamerNotificationBot {
         this.client.once('ready', async () => {
             logger.info(`${this.client.user.tag} としてログインしました`);
             logger.info('ロールボタン機能が有効です');
+            logger.info('配信状態変化検出機能が有効です');
 
             // 配信者チェックを開始
             await this.startPeriodicCheck();
@@ -82,7 +85,7 @@ class StreamerNotificationBot {
 
             // 有効なRSSフィードをフィルタリング
             const enabledFeeds = config.rss.feeds.filter(feed => feed.enabled !== false);
-            
+
             if (enabledFeeds.length === 0) {
                 logger.info('有効なRSSフィードが設定されていません');
                 return;
@@ -118,10 +121,10 @@ class StreamerNotificationBot {
 
         } catch (error) {
             logger.error('インタラクション処理エラー:', error);
-            
+
             // エラーレスポンス
             const errorMessage = 'インタラクション処理中にエラーが発生しました。';
-            
+
             try {
                 if (interaction.replied || interaction.deferred) {
                     await interaction.followUp({
@@ -140,16 +143,121 @@ class StreamerNotificationBot {
         }
     }
 
+    /**
+     * 定期チェックを開始
+     */
     async startPeriodicCheck() {
-        // 初回チェック
-        await this.checkForNewContent();
+        // 初回チェック（5秒後に実行）
+        setTimeout(async () => {
+            await this.checkForNewContent();
+        }, 5000);
 
-        // 定期チェックを設定 (デフォルト: 5分間隔)
+        const schedulerMode = config.scheduler.mode;
+
+        if (schedulerMode === 'cron') {
+            await this.startCronSchedule();
+        } else {
+            await this.startIntervalSchedule();
+        }
+    }
+
+    /**
+     * cronスケジュールを開始
+     */
+    async startCronSchedule() {
+        try {
+            const cronPattern = config.getCronPattern();
+
+            // cronパターンが有効かチェック
+            if (!cron.validate(cronPattern)) {
+                throw new Error(`無効なcronパターンです: ${cronPattern}`);
+            }
+
+            this.cronTask = cron.schedule(cronPattern, async () => {
+                const now = new Date();
+                logger.info(`定期実行開始 (cron: ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')})`);
+                await this.checkForNewContent();
+            }, {
+                scheduled: true,
+                timezone: "Asia/Tokyo"
+            });
+
+            // 次回実行時刻を計算して表示
+            const nextRun = this.getNextCronRun(cronPattern);
+            logger.info(`cronスケジュールを開始しました (パターン: ${cronPattern})`);
+            logger.info(`次回実行予定: ${nextRun.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`);
+
+        } catch (error) {
+            logger.error('cronスケジュール開始エラー:', error);
+            logger.info('フォールバックとして定期実行モードを使用します');
+            await this.startIntervalSchedule();
+        }
+    }
+
+    /**
+     * intervalスケジュールを開始
+     */
+    async startIntervalSchedule() {
+        const interval = config.scheduler.checkInterval || 5 * 60 * 1000;
+
         this.checkInterval = setInterval(async () => {
             await this.checkForNewContent();
-        }, config.checkInterval || 5 * 60 * 1000);
+        }, interval);
 
-        logger.info(`定期チェックを開始しました (間隔: ${(config.checkInterval || 5 * 60 * 1000) / 1000}秒)`);
+        logger.info(`定期チェックを開始しました (間隔: ${interval / 1000}秒)`);
+    }
+
+    /**
+     * cronパターンから次回実行時刻を計算
+     * @param {string} cronPattern - cronパターン
+     * @returns {Date} 次回実行時刻
+     */
+    getNextCronRun(cronPattern) {
+        try {
+            const parts = cronPattern.split(' ');
+            if (parts.length < 5) return new Date();
+
+            const minutes = parts[0];
+            const now = new Date();
+            const nextRun = new Date(now);
+
+            // 分の部分を解析
+            if (minutes.includes(',')) {
+                // 複数分指定の場合
+                const minuteList = minutes.split(',').map(m => parseInt(m.trim()));
+                const currentMinute = now.getMinutes();
+
+                let nextMinute = minuteList.find(m => m > currentMinute);
+                if (nextMinute === undefined) {
+                    // 次の時間の最初の分
+                    nextMinute = minuteList[0];
+                    nextRun.setHours(nextRun.getHours() + 1);
+                }
+
+                nextRun.setMinutes(nextMinute);
+                nextRun.setSeconds(0);
+                nextRun.setMilliseconds(0);
+            } else if (minutes === '*') {
+                // 毎分実行の場合
+                nextRun.setMinutes(nextRun.getMinutes() + 1);
+                nextRun.setSeconds(0);
+                nextRun.setMilliseconds(0);
+            } else {
+                // 単一分指定の場合
+                const targetMinute = parseInt(minutes);
+                if (now.getMinutes() >= targetMinute) {
+                    nextRun.setHours(nextRun.getHours() + 1);
+                }
+                nextRun.setMinutes(targetMinute);
+                nextRun.setSeconds(0);
+                nextRun.setMilliseconds(0);
+            }
+
+            return nextRun;
+        } catch (error) {
+            logger.error('次回実行時刻計算エラー:', error);
+            return new Date(Date.now() + 60000); // 1分後をデフォルトとする
+        }
     }
 
     async checkForNewContent() {
@@ -175,17 +283,39 @@ class StreamerNotificationBot {
                 );
 
                 for (const video of videos) {
-                    const isNew = await this.notificationHandler.isNewContent(video.id);
+                    // 通知すべきかチェック（状態変化も考慮）
+                    const notificationCheck = await this.notificationHandler.shouldNotify(video.id, video);
 
-                    if (isNew) {
+                    if (notificationCheck.shouldNotify) {
+                        // 通知を送信
                         await this.notificationHandler.sendNotification(
                             streamer.notificationChannelId,
                             video,
-                            streamer
+                            streamer,
+                            notificationCheck.notificationType
                         );
 
-                        await this.notificationHandler.markAsSent(video.id, streamer.name, streamer.platform);
-                        logger.info(`新しい動画を通知しました: ${video.title}`);
+                        // 送信済みとしてマーク
+                        await this.notificationHandler.markAsSent(
+                            video.id,
+                            streamer.name,
+                            streamer.platform,
+                            video,
+                            notificationCheck.notificationType
+                        );
+
+                        // ログメッセージを作成
+                        let logMessage = `新しい動画を通知しました: ${video.title}`;
+                        if (notificationCheck.notificationType === 'status_change') {
+                            logMessage = `配信状態変化を通知しました: ${video.title} (配信予定 → ライブ配信開始)`;
+                        }
+
+                        logger.info(logMessage);
+                    } else {
+                        // 通知しない場合のデバッグログ
+                        if (notificationCheck.statusChanged) {
+                            logger.debug(`状態変化を検出しましたが通知しません: ${video.title} (${notificationCheck.notificationType})`);
+                        }
                     }
                 }
             }
@@ -195,8 +325,16 @@ class StreamerNotificationBot {
     }
 
     gracefulShutdown() {
+        // intervalタイマーを停止
         if (this.checkInterval) {
             clearInterval(this.checkInterval);
+            logger.info('定期実行タイマーを停止しました');
+        }
+
+        // cronタスクを停止
+        if (this.cronTask) {
+            this.cronTask.stop();
+            logger.info('cronタスクを停止しました');
         }
 
         this.client.destroy();

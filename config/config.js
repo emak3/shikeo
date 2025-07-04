@@ -61,8 +61,23 @@ module.exports = {
         databaseURL: process.env.FIREBASE_DATABASE_URL || `https://${process.env.FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com/`
     },
 
-    // チェック間隔 (ミリ秒)
-    checkInterval: 5 * 60 * 1000, // 5分
+    // チェック間隔設定
+    scheduler: {
+        // 使用する方式: 'interval' または 'cron'
+        mode: process.env.SCHEDULER_MODE || 'cron',
+
+        // interval方式の場合の間隔 (ミリ秒)
+        checkInterval: parseInt(process.env.CHECK_INTERVAL) || 5 * 60 * 1000, // 5分
+
+        // cron方式の場合の実行分
+        cronMinutes: process.env.CRON_MINUTES ?
+            process.env.CRON_MINUTES.split(',').map(m => parseInt(m.trim())) :
+            [1, 16, 31, 46], // 1分、16分、31分、46分に実行
+
+        // cron形式の設定（高度な設定用）
+        // cronMinutesよりもこちらが優先される
+        cronPattern: process.env.CRON_PATTERN || null
+    },
 
     // 1回のチェックで取得する最大動画数
     maxVideosToCheck: 5,
@@ -75,6 +90,13 @@ module.exports = {
             channelId: "UCU2-bJN1yP-G4KuXzVipFPA", // YouTubeチャンネルID
             notificationChannelId: "1271897953912750120", // Discord通知チャンネルID
             mentionRole: "1390492864504402042" // メンション対象ロールID (オプション)
+        },
+        {
+            name: "JRA公式チャンネル",
+            platform: "youtube", // youtube, twitch
+            channelId: "UCj6AKkCWS6FJqf0o5wP45eQ", // YouTubeチャンネルID
+            notificationChannelId: "1365691475744260177", // Discord通知チャンネルID
+            mentionRole: "" // メンション対象ロールID (オプション)
         },
         // 必要に応じて追加
     ],
@@ -128,6 +150,28 @@ module.exports = {
         ]
     }
 };
+
+/**
+ * cronパターンを生成する
+ * @returns {string} cron形式のパターン
+ */
+function generateCronPattern() {
+    const config = module.exports;
+
+    // 直接cronPatternが指定されている場合はそれを使用
+    if (config.scheduler.cronPattern) {
+        return config.scheduler.cronPattern;
+    }
+
+    // cronMinutesから生成
+    if (config.scheduler.cronMinutes && config.scheduler.cronMinutes.length > 0) {
+        const minutesStr = config.scheduler.cronMinutes.join(',');
+        return `${minutesStr} * * * *`; // 毎時指定分に実行
+    }
+
+    // デフォルト: 1,16,31,46分
+    return '1,16,31,46 * * * *';
+}
 
 // 設定の検証
 function validateConfig() {
@@ -183,8 +227,25 @@ function validateConfig() {
     if (streamersWithRoles.length > 0) {
         console.log(`✅ ロールボタン機能が有効です (${streamersWithRoles.length}人の配信者)`);
     }
+
+    // スケジューラー設定の表示
+    const config = module.exports;
+    if (config.scheduler.mode === 'cron') {
+        const cronPattern = generateCronPattern();
+        console.log(`✅ cronスケジュール機能が有効です (パターン: ${cronPattern})`);
+
+        if (config.scheduler.cronMinutes) {
+            console.log(`   実行分: ${config.scheduler.cronMinutes.join(', ')}分`);
+        }
+    } else {
+        console.log(`✅ 定期実行機能が有効です (間隔: ${config.scheduler.checkInterval / 1000}秒)`);
+    }
+
     return true;
 }
+
+// cronパターンを取得する関数をエクスポート
+module.exports.getCronPattern = generateCronPattern;
 
 // 設定の検証を実行（起動時のみ）
 try {

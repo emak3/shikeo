@@ -28,6 +28,20 @@ class Logger {
     }
 
     /**
+     * 日本時間のタイムスタンプを取得
+     * @returns {string} 日本時間のタイムスタンプ
+     */
+    getJapanTimestamp() {
+        const now = new Date();
+        
+        // 日本時間で表示（JST: UTC+9）
+        const japanTime = new Date(now.getTime() + (9 * 60 * 60 * 1000));
+        
+        // YYYY-MM-DDTHH:mm:ss.sssZ形式でフォーマット
+        return japanTime.toISOString().replace('Z', '+09:00');
+    }
+
+    /**
      * ログメッセージをフォーマット
      * @param {string} level - ログレベル
      * @param {string} message - メッセージ
@@ -35,7 +49,7 @@ class Logger {
      * @returns {string} フォーマット済みログメッセージ
      */
     formatMessage(level, message, data = null) {
-        const timestamp = new Date().toISOString();
+        const timestamp = this.getJapanTimestamp();
         const levelUpper = level.toUpperCase().padEnd(5);
         
         let logMessage = `[${timestamp}] ${levelUpper} ${message}`;
