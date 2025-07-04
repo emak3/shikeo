@@ -3,10 +3,18 @@ const admin = require('firebase-admin');
 const config = require('../config/config.js');
 const logger = require('./logger.js');
 
+// シングルトンパターンでDatabaseインスタンスを管理
+let databaseInstance = null;
+
 class Database {
     constructor() {
+        if (databaseInstance) {
+            return databaseInstance;
+        }
+        
         this.db = null;
         this.init();
+        databaseInstance = this;
     }
 
     /**
@@ -14,20 +22,34 @@ class Database {
      */
     init() {
         try {
-            // Firebase Admin SDKの初期化
+            // Firebase Admin SDKの初期化（既に初期化されている場合はスキップ）
             if (!admin.apps.length) {
                 admin.initializeApp({
                     credential: admin.credential.cert(config.firebase.serviceAccount),
                     databaseURL: config.firebase.databaseURL
                 });
+                
+                logger.info('Firebase Admin SDKを初期化しました');
+            } else {
+                logger.debug('Firebase Admin SDKは既に初期化されています');
             }
 
             this.db = admin.firestore();
-
-            // Firestoreの設定
-            this.db.settings({
-                timestampsInSnapshots: true
-            });
+            
+            // Firestoreの設定（まだ設定されていない場合のみ）
+            try {
+                this.db.settings({
+                    timestampsInSnapshots: true
+                });
+                logger.debug('Firestore設定を適用しました');
+            } catch (settingsError) {
+                // 既に設定されている場合は無視
+                if (settingsError.message.includes('already been initialized')) {
+                    logger.debug('Firestore設定は既に適用されています');
+                } else {
+                    throw settingsError;
+                }
+            }
 
             logger.info('Firebase Firestoreに接続しました');
 
@@ -58,24 +80,24 @@ class Database {
     async checkNotificationStatus(contentId, currentStatus = 'video') {
         try {
             const { sentNotifications, videoStatus } = this.getCollections();
-
+            
             // 動画状態履歴をチェック
             const statusDoc = await videoStatus.doc(contentId).get();
             const previousStatus = statusDoc.exists ? statusDoc.data().status : null;
-
+            
             // 状態変化を検出
             const statusChanged = previousStatus && previousStatus !== currentStatus;
-
+            
             // 初回通知の送信履歴をチェック
             const initialSentDoc = await sentNotifications.doc(contentId).get();
-
+            
             // 状態変化通知の送信履歴をチェック（配信予定→ライブの場合）
             const statusChangeSentDoc = await sentNotifications.doc(`${contentId}_live_status_change`).get();
-
+            
             // 通知すべきかを判定
             let shouldNotify = false;
             let notificationType = 'initial';
-
+            
             if (!initialSentDoc.exists) {
                 // 初回通知（まだ一度も通知していない）
                 shouldNotify = true;
@@ -88,21 +110,21 @@ class Database {
                     notificationType = 'status_change';
                 }
             }
-
+            
             return {
                 shouldNotify,
                 statusChanged,
                 previousStatus,
                 notificationType
             };
-
+            
         } catch (error) {
             logger.error('通知状態チェックエラー:', error);
-            return {
-                shouldNotify: false,
-                statusChanged: false,
-                previousStatus: null,
-                notificationType: 'initial'
+            return { 
+                shouldNotify: false, 
+                statusChanged: false, 
+                previousStatus: null, 
+                notificationType: 'initial' 
             };
         }
     }
@@ -133,7 +155,7 @@ class Database {
     async updateVideoStatus(contentId, status, videoInfo = {}) {
         try {
             const { videoStatus } = this.getCollections();
-
+            
             await videoStatus.doc(contentId).set({
                 contentId,
                 status,
@@ -146,9 +168,9 @@ class Database {
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
                 })
             }, { merge: true });
-
+            
             logger.debug(`動画状態を更新: ${contentId} -> ${status}`);
-
+            
         } catch (error) {
             logger.error('動画状態更新エラー:', error);
             throw error;
@@ -167,7 +189,7 @@ class Database {
     async markAsSent(docId, streamerName = '', platform = '', status = 'video', notificationType = 'initial') {
         try {
             const { sentNotifications } = this.getCollections();
-
+            
             await sentNotifications.doc(docId).set({
                 contentId: docId.includes('_') ? docId.split('_')[0] : docId, // 元の動画IDを記録
                 docId: docId, // 実際のドキュメントID
@@ -178,9 +200,9 @@ class Database {
                 sentAt: admin.firestore.FieldValue.serverTimestamp(),
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
-
+            
             logger.debug(`送信履歴を記録: ${docId} (${notificationType})`);
-
+            
         } catch (error) {
             logger.error('送信済みマークエラー:', error);
             throw error;
@@ -195,7 +217,7 @@ class Database {
     async getVideoStatusHistory(contentId) {
         try {
             const { videoStatus, sentNotifications } = this.getCollections();
-
+            
             // 状態履歴と通知履歴を並列取得
             const [statusDoc, notificationSnapshot] = await Promise.all([
                 videoStatus.doc(contentId).get(),
@@ -203,7 +225,7 @@ class Database {
                     .orderBy('sentAt', 'desc')
                     .get()
             ]);
-
+            
             const history = {
                 currentStatus: statusDoc.exists ? statusDoc.data() : null,
                 notifications: notificationSnapshot.docs.map(doc => ({
@@ -212,9 +234,9 @@ class Database {
                     sentAt: doc.data().sentAt?.toDate()
                 }))
             };
-
+            
             return history;
-
+            
         } catch (error) {
             logger.error('動画状態履歴取得エラー:', error);
             return { currentStatus: null, notifications: [] };
@@ -230,7 +252,7 @@ class Database {
         try {
             const { streamers } = this.getCollections();
             const docId = `${streamer.platform}_${streamer.channelId}`;
-
+            
             await streamers.doc(docId).set({
                 name: streamer.name,
                 platform: streamer.platform,
@@ -278,19 +300,19 @@ class Database {
         try {
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
+            
             const { sentNotifications, videoStatus, errorLogs } = this.getCollections();
-
+            
             // 古い送信済み通知を削除
             const oldNotifications = await sentNotifications
                 .where('createdAt', '<', cutoffDate)
                 .get();
-
+            
             const batch1 = this.db.batch();
             oldNotifications.docs.forEach(doc => {
                 batch1.delete(doc.ref);
             });
-
+            
             if (!oldNotifications.empty) {
                 await batch1.commit();
             }
@@ -299,12 +321,12 @@ class Database {
             const oldVideoStatus = await videoStatus
                 .where('createdAt', '<', cutoffDate)
                 .get();
-
+            
             const batch2 = this.db.batch();
             oldVideoStatus.docs.forEach(doc => {
                 batch2.delete(doc.ref);
             });
-
+            
             if (!oldVideoStatus.empty) {
                 await batch2.commit();
             }
@@ -313,12 +335,12 @@ class Database {
             const oldErrorLogs = await errorLogs
                 .where('createdAt', '<', cutoffDate)
                 .get();
-
+            
             const batch3 = this.db.batch();
             oldErrorLogs.docs.forEach(doc => {
                 batch3.delete(doc.ref);
             });
-
+            
             if (!oldErrorLogs.empty) {
                 await batch3.commit();
             }
@@ -337,7 +359,7 @@ class Database {
     async getStats() {
         try {
             const { sentNotifications, streamers, errorLogs, videoStatus } = this.getCollections();
-
+            
             // 24時間前の時刻を計算
             const yesterday = new Date();
             yesterday.setHours(yesterday.getHours() - 24);
@@ -407,7 +429,7 @@ class Database {
         try {
             const { streamers } = this.getCollections();
             const snapshot = await streamers.get();
-
+            
             return snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data(),

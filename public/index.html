@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配信者通知Bot - ダッシュボード</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.css">
+</head>
+<body>
+    <div class="background-animation">
+        <div class="bg-shape bg-shape-1"></div>
+        <div class="bg-shape bg-shape-2"></div>
+        <div class="bg-shape bg-shape-3"></div>
+    </div>
+
+    <nav class="sidebar">
+        <div class="logo">
+            <div class="logo-icon">🤖</div>
+            <span class="logo-text">しけおBot</span>
+        </div>
+        
+        <ul class="nav-menu">
+            <li class="nav-item active">
+                <i data-feather="activity"></i>
+                <span>ダッシュボード</span>
+            </li>
+            <li class="nav-item">
+                <i data-feather="users"></i>
+                <span>配信者</span>
+            </li>
+            <li class="nav-item">
+                <i data-feather="rss"></i>
+                <span>RSS</span>
+            </li>
+            <li class="nav-item">
+                <i data-feather="file-text"></i>
+                <span>ログ</span>
+            </li>
+            <li class="nav-item">
+                <i data-feather="settings"></i>
+                <span>設定</span>
+            </li>
+        </ul>
+    </nav>
+
+    <main class="main-content">
+        <header class="header">
+            <h1 class="page-title">ダッシュボード</h1>
+            <div class="header-actions">
+                <button class="btn btn-outline" onclick="loadAllData()">
+                    <i data-feather="refresh-cw"></i>
+                    更新
+                </button>
+                <div class="status-indicator">
+                    <div class="status-dot" id="connection-status"></div>
+                    <span id="connection-text">接続中...</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-icon bot-status">
+                        <i data-feather="zap"></i>
+                    </div>
+                    <div class="metric-value" id="bot-status-value">
+                        <div class="loading-skeleton"></div>
+                    </div>
+                </div>
+                <div class="metric-label">ボットステータス</div>
+                <div class="metric-trend up">
+                    <i data-feather="arrow-up"></i>
+                    <span id="uptime-text">計算中...</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-icon notifications">
+                        <i data-feather="bell"></i>
+                    </div>
+                    <div class="metric-value" id="total-notifications">
+                        <div class="loading-skeleton"></div>
+                    </div>
+                </div>
+                <div class="metric-label">総通知数</div>
+                <div class="metric-trend neutral">
+                    <span id="recent-notifications">24h: -</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-icon streamers">
+                        <i data-feather="users"></i>
+                    </div>
+                    <div class="metric-value" id="total-streamers">
+                        <div class="loading-skeleton"></div>
+                    </div>
+                </div>
+                <div class="metric-label">監視中配信者</div>
+                <div class="metric-trend neutral">
+                    <span id="live-count">ライブ: -</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-icon scheduler">
+                        <i data-feather="clock"></i>
+                    </div>
+                    <div class="metric-value" id="scheduler-mode">
+                        <div class="loading-skeleton"></div>
+                    </div>
+                </div>
+                <div class="metric-label">スケジューラー</div>
+                <div class="metric-trend neutral">
+                    <span id="scheduler-pattern">パターン: -</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i data-feather="activity"></i>
+                        システム状態
+                    </h3>
+                    <button class="btn btn-ghost btn-sm" onclick="loadStatus()">
+                        <i data-feather="refresh-cw"></i>
+                    </button>
+                </div>
+                <div class="card-content">
+                    <div id="system-status" class="status-list">
+                        <div class="loading-skeleton-lines"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i data-feather="users"></i>
+                        配信者一覧
+                    </h3>
+                    <span class="badge" id="streamers-count">0</span>
+                </div>
+                <div class="card-content">
+                    <div id="streamers-list" class="streamers-grid">
+                        <div class="loading-skeleton-lines"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i data-feather="rss"></i>
+                        RSS設定
+                    </h3>
+                    <div class="toggle-switch" id="rss-toggle">
+                        <div class="toggle-slider"></div>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <div id="rss-status" class="rss-feeds">
+                        <div class="loading-skeleton-lines"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i data-feather="terminal"></i>
+                        ライブログ
+                    </h3>
+                    <div class="card-actions">
+                        <button class="btn btn-ghost btn-sm" onclick="loadLogs()">
+                            <i data-feather="refresh-cw"></i>
+                            更新
+                        </button>
+                        <button class="btn btn-ghost btn-sm" onclick="clearLogs()">
+                            <i data-feather="trash-2"></i>
+                            クリア
+                        </button>
+                    </div>
+                </div>
+                <div class="card-content">
+                    <div id="logs-container" class="logs-container">
+                        <div class="loading-skeleton-lines"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

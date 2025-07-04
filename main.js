@@ -5,6 +5,7 @@ const config = require('./config/config.js');
 const YouTubeService = require('./services/YouTubeService.js');
 const NotificationHandler = require('./handlers/NotificationHandler.js');
 const RssService = require('./services/RssService.js');
+const WebServer = require('./webserver.js');
 const logger = require('./utils/logger.js');
 
 class StreamerNotificationBot {
@@ -21,6 +22,7 @@ class StreamerNotificationBot {
         this.youtubeService = new YouTubeService(config.youtube.apiKey);
         this.notificationHandler = new NotificationHandler(this.client);
         this.rssService = new RssService(this.client);
+        this.webServer = config.webServer?.enabled !== false ? new WebServer(this) : null;
         this.checkInterval = null;
         this.cronTask = null;
     }
@@ -43,6 +45,11 @@ class StreamerNotificationBot {
             logger.info(`${this.client.user.tag} としてログインしました`);
             logger.info('ロールボタン機能が有効です');
             logger.info('配信状態変化検出機能が有効です');
+
+            // Webサーバーを開始（設定で有効で、インスタンスが存在する場合のみ）
+            if (this.webServer) {
+                this.webServer.start();
+            }
 
             // 配信者チェックを開始
             await this.startPeriodicCheck();
@@ -85,7 +92,7 @@ class StreamerNotificationBot {
 
             // 有効なRSSフィードをフィルタリング
             const enabledFeeds = config.rss.feeds.filter(feed => feed.enabled !== false);
-
+            
             if (enabledFeeds.length === 0) {
                 logger.info('有効なRSSフィードが設定されていません');
                 return;
@@ -121,10 +128,10 @@ class StreamerNotificationBot {
 
         } catch (error) {
             logger.error('インタラクション処理エラー:', error);
-
+            
             // エラーレスポンス
             const errorMessage = 'インタラクション処理中にエラーが発生しました。';
-
+            
             try {
                 if (interaction.replied || interaction.deferred) {
                     await interaction.followUp({
@@ -167,7 +174,7 @@ class StreamerNotificationBot {
     async startCronSchedule() {
         try {
             const cronPattern = config.getCronPattern();
-
+            
             // cronパターンが有効かチェック
             if (!cron.validate(cronPattern)) {
                 throw new Error(`無効なcronパターンです: ${cronPattern}`);
@@ -199,7 +206,7 @@ class StreamerNotificationBot {
      */
     async startIntervalSchedule() {
         const interval = config.scheduler.checkInterval || 5 * 60 * 1000;
-
+        
         this.checkInterval = setInterval(async () => {
             await this.checkForNewContent();
         }, interval);
@@ -226,14 +233,14 @@ class StreamerNotificationBot {
                 // 複数分指定の場合
                 const minuteList = minutes.split(',').map(m => parseInt(m.trim()));
                 const currentMinute = now.getMinutes();
-
+                
                 let nextMinute = minuteList.find(m => m > currentMinute);
                 if (nextMinute === undefined) {
                     // 次の時間の最初の分
                     nextMinute = minuteList[0];
                     nextRun.setHours(nextRun.getHours() + 1);
                 }
-
+                
                 nextRun.setMinutes(nextMinute);
                 nextRun.setSeconds(0);
                 nextRun.setMilliseconds(0);
@@ -297,9 +304,9 @@ class StreamerNotificationBot {
 
                         // 送信済みとしてマーク
                         await this.notificationHandler.markAsSent(
-                            video.id,
-                            streamer.name,
-                            streamer.platform,
+                            video.id, 
+                            streamer.name, 
+                            streamer.platform, 
                             video,
                             notificationCheck.notificationType
                         );
@@ -309,7 +316,7 @@ class StreamerNotificationBot {
                         if (notificationCheck.notificationType === 'status_change') {
                             logMessage = `配信状態変化を通知しました: ${video.title} (配信予定 → ライブ配信開始)`;
                         }
-
+                        
                         logger.info(logMessage);
                     } else {
                         // 通知しない場合のデバッグログ
@@ -335,6 +342,11 @@ class StreamerNotificationBot {
         if (this.cronTask) {
             this.cronTask.stop();
             logger.info('cronタスクを停止しました');
+        }
+
+        // Webサーバーを停止
+        if (this.webServer) {
+            this.webServer.stop();
         }
 
         this.client.destroy();

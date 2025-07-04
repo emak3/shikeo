@@ -65,15 +65,15 @@ module.exports = {
     scheduler: {
         // 使用する方式: 'interval' または 'cron'
         mode: process.env.SCHEDULER_MODE || 'cron',
-
+        
         // interval方式の場合の間隔 (ミリ秒)
         checkInterval: parseInt(process.env.CHECK_INTERVAL) || 5 * 60 * 1000, // 5分
-
+        
         // cron方式の場合の実行分
-        cronMinutes: process.env.CRON_MINUTES ?
-            process.env.CRON_MINUTES.split(',').map(m => parseInt(m.trim())) :
+        cronMinutes: process.env.CRON_MINUTES ? 
+            process.env.CRON_MINUTES.split(',').map(m => parseInt(m.trim())) : 
             [1, 16, 31, 46], // 1分、16分、31分、46分に実行
-
+        
         // cron形式の設定（高度な設定用）
         // cronMinutesよりもこちらが優先される
         cronPattern: process.env.CRON_PATTERN || null
@@ -111,6 +111,13 @@ module.exports = {
     logging: {
         level: process.env.LOG_LEVEL || 'info',
         file: process.env.LOG_FILE || './logs/bot.log'
+    },
+
+    // Webサーバー設定
+    webServer: {
+        enabled: process.env.WEB_SERVER_ENABLED !== 'false', // デフォルトで有効
+        port: parseInt(process.env.WEB_PORT) || 3000,
+        host: process.env.WEB_HOST || '0.0.0.0'
     },
 
     // ロールボタン設定
@@ -157,18 +164,18 @@ module.exports = {
  */
 function generateCronPattern() {
     const config = module.exports;
-
+    
     // 直接cronPatternが指定されている場合はそれを使用
     if (config.scheduler.cronPattern) {
         return config.scheduler.cronPattern;
     }
-
+    
     // cronMinutesから生成
     if (config.scheduler.cronMinutes && config.scheduler.cronMinutes.length > 0) {
         const minutesStr = config.scheduler.cronMinutes.join(',');
         return `${minutesStr} * * * *`; // 毎時指定分に実行
     }
-
+    
     // デフォルト: 1,16,31,46分
     return '1,16,31,46 * * * *';
 }
@@ -228,19 +235,25 @@ function validateConfig() {
         console.log(`✅ ロールボタン機能が有効です (${streamersWithRoles.length}人の配信者)`);
     }
 
+    // Webサーバー設定の表示
+    const webConfig = module.exports.webServer;
+    if (webConfig.enabled) {
+        console.log(`✅ Webサーバー機能が有効です (ポート: ${webConfig.port})`);
+    }
+
     // スケジューラー設定の表示
     const config = module.exports;
     if (config.scheduler.mode === 'cron') {
         const cronPattern = generateCronPattern();
         console.log(`✅ cronスケジュール機能が有効です (パターン: ${cronPattern})`);
-
+        
         if (config.scheduler.cronMinutes) {
             console.log(`   実行分: ${config.scheduler.cronMinutes.join(', ')}分`);
         }
     } else {
         console.log(`✅ 定期実行機能が有効です (間隔: ${config.scheduler.checkInterval / 1000}秒)`);
     }
-
+    
     return true;
 }
 
