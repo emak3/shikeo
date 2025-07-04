@@ -103,6 +103,29 @@ module.exports = {
 
         // ロール操作のログを有効にするかどうか
         enableRoleLog: true
+    },
+    rss: {
+        // RSS処理が有効かどうか
+        enabled: true,
+
+        // RSS処理間隔（分）
+        intervalMinutes: 10,
+
+        // RSSフィード設定
+        feeds: [
+            {
+                name: "Netkeiba 国内最大級の競馬情報サイト",
+                url: "https://rss.netkeiba.com/?pid=rss_netkeiba&site=netkeiba",
+                channels: ["1365691475744260177"],
+                enabled: true
+            },
+            {
+                name: "競馬 - nikkansports.com",
+                url: "https://www.nikkansports.com/keiba/atom.xml",
+                channels: ["1365691475744260177"],
+                enabled: true
+            }
+        ]
     }
 };
 

@@ -3,6 +3,7 @@ const { Client, GatewayIntentBits, InteractionType } = require('discord.js');
 const config = require('./config/config.js');
 const YouTubeService = require('./services/YouTubeService.js');
 const NotificationHandler = require('./handlers/NotificationHandler.js');
+const RssService = require('./services/RssService.js');
 const logger = require('./utils/logger.js');
 
 class StreamerNotificationBot {
@@ -12,12 +13,13 @@ class StreamerNotificationBot {
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.MessageContent,
-                GatewayIntentBits.GuildMembers // ロール操作に必要
+                GatewayIntentBits.GuildMembers
             ]
         });
 
         this.youtubeService = new YouTubeService(config.youtube.apiKey);
         this.notificationHandler = new NotificationHandler(this.client);
+        this.rssService = new RssService(this.client);
         this.checkInterval = null;
     }
 
@@ -39,8 +41,11 @@ class StreamerNotificationBot {
             logger.info(`${this.client.user.tag} としてログインしました`);
             logger.info('ロールボタン機能が有効です');
 
-            // 定期チェックを開始
+            // 配信者チェックを開始
             await this.startPeriodicCheck();
+
+            // RSS機能を開始
+            await this.startRssService();
         });
 
         // インタラクション処理
@@ -62,6 +67,33 @@ class StreamerNotificationBot {
             logger.info('シャットダウン処理を開始します...');
             this.gracefulShutdown();
         });
+    }
+
+    /**
+     * RSS機能を開始する
+     */
+    async startRssService() {
+        try {
+            // RSS設定をチェック
+            if (!config.rss || !config.rss.enabled || !config.rss.feeds || config.rss.feeds.length === 0) {
+                logger.info('RSS機能は無効になっています');
+                return;
+            }
+
+            // 有効なRSSフィードをフィルタリング
+            const enabledFeeds = config.rss.feeds.filter(feed => feed.enabled !== false);
+            
+            if (enabledFeeds.length === 0) {
+                logger.info('有効なRSSフィードが設定されていません');
+                return;
+            }
+
+            // RSS処理を開始
+            this.rssService.startScheduledProcessing(enabledFeeds);
+            logger.info(`RSS機能を開始しました (${enabledFeeds.length}個のフィード)`);
+        } catch (error) {
+            logger.error('RSS機能の開始に失敗しました:', error);
+        }
     }
 
     /**
