@@ -170,7 +170,7 @@ class NotificationHandler {
 
         // 状態変化の場合は特別なメッセージ
         if (notificationType === 'status_change') {
-            message += `${streamer.name} の配信予定が **ライブ配信開始** しました！\n`;
+            message += `${streamer.name} の配信予定が **🔴 ライブ配信開始** しました！\n`;
         } else {
             message += `${streamer.name} が ${this.getContentTypeHeader(content, notificationType)}\n`;
         }
