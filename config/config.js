@@ -155,7 +155,43 @@ module.exports = {
                 enabled: true
             }
         ]
-    }
+    },
+    stickyMessages: {
+        // 機能の有効/無効
+        enabled: process.env.STICKY_MESSAGES_ENABLED !== 'false', // デフォルトで有効
+
+        // スティッキーメッセージの設定配列
+        channels: [
+            {
+                // 対象チャンネルID
+                channelId: "1148562029880299563",
+                
+                // 固定するメッセージ内容
+                message:"- 名前：\n" +
+                        "- しけおの好きなところ：\n" +
+                        "- やってるゲーム：\n" +
+                        "- 一言：",
+                
+                // メッセージの送信者名（オプション）
+                username: "自己紹介テンプレート (自由に変えてOK)",
+                
+                // アバターURL（オプション）
+                avatarURL: null,
+                
+                // 固定メッセージの遅延（ミリ秒）
+                delay: 200, // 0.2秒後に送信
+                
+                // 有効/無効の個別設定
+                enabled: true
+            },
+            // 複数のチャンネルに設定可能
+            // {
+            //     channelId: "別のチャンネルID",
+            //     message: "別のメッセージ",
+            //     enabled: true
+            // }
+        ]
+    },
 };
 
 /**

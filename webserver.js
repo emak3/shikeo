@@ -15,7 +15,7 @@ class WebServer {
         this.database = new Database();
         this.startTime = new Date();
         this.server = null;
-        
+
         this.setupMiddleware();
         this.setupRoutes();
     }
@@ -23,10 +23,10 @@ class WebServer {
     setupMiddleware() {
         // JSONパース
         this.app.use(express.json());
-        
+
         // 静的ファイル配信
         this.app.use('/static', express.static(path.join(__dirname, 'public')));
-        
+
         // ログ出力
         this.app.use((req, res, next) => {
             logger.debug(`${req.method} ${req.path} - ${req.ip}`);
@@ -54,7 +54,7 @@ class WebServer {
         this.app.get('/api/status', async (req, res) => {
             try {
                 const stats = await this.database.getStats();
-                
+
                 res.json({
                     bot: {
                         online: this.bot?.client?.isReady() || false,
@@ -109,12 +109,94 @@ class WebServer {
                 feeds
             });
         });
+        // API: スティッキーメッセージ統計
+        this.app.get('/api/sticky-messages', async (req, res) => {
+            try {
+                if (this.bot?.stickyMessageHandler) {
+                    const stats = await this.bot.stickyMessageHandler.getStats();
+                    const config = this.bot.stickyMessageHandler.stickyConfig;
 
+                    res.json({
+                        ...stats,
+                        channels: config?.channels?.map(ch => ({
+                            channelId: ch.channelId,
+                            enabled: ch.enabled !== false,
+                            hasUsername: !!ch.username,
+                            hasAvatar: !!ch.avatarURL,
+                            delay: ch.delay || 2000
+                        })) || []
+                    });
+                } else {
+                    res.json({
+                        enabled: false,
+                        configuredChannels: 0,
+                        activeStickyMessages: 0,
+                        processingChannels: 0,
+                        pendingTimeouts: 0,
+                        channels: []
+                    });
+                }
+            } catch (error) {
+                logger.error('スティッキーメッセージAPI エラー:', error);
+                res.status(500).json({ error: 'Failed to get sticky message stats' });
+            }
+        });
+
+        // API: 特定チャンネルのスティッキーメッセージを手動送信
+        this.app.post('/api/sticky-messages/:channelId/send', async (req, res) => {
+            try {
+                const { channelId } = req.params;
+
+                if (!this.bot?.stickyMessageHandler) {
+                    return res.status(400).json({ error: 'スティッキーメッセージ機能が無効です' });
+                }
+
+                await this.bot.stickyMessageHandler.forceSendStickyMessage(channelId);
+
+                res.json({
+                    success: true,
+                    message: `チャンネル ${channelId} にスティッキーメッセージを送信しました`
+                });
+
+            } catch (error) {
+                logger.error('スティッキーメッセージ手動送信エラー:', error);
+                res.status(500).json({
+                    error: 'スティッキーメッセージの送信に失敗しました',
+                    details: error.message
+                });
+            }
+        });
+
+        // API: 特定チャンネルのスティッキーメッセージを削除
+        this.app.delete('/api/sticky-messages/:channelId', async (req, res) => {
+            try {
+                const { channelId } = req.params;
+
+                if (!this.bot?.stickyMessageHandler) {
+                    return res.status(400).json({ error: 'スティッキーメッセージ機能が無効です' });
+                }
+
+                await this.bot.stickyMessageHandler.removeStickyMessage(channelId);
+
+                res.json({
+                    success: true,
+                    message: `チャンネル ${channelId} のスティッキーメッセージを削除しました`
+                });
+
+            } catch (error) {
+                logger.error('スティッキーメッセージ削除エラー:', error);
+                res.status(500).json({
+                    error: 'スティッキーメッセージの削除に失敗しました',
+                    details: error.message
+                });
+            }
+        });
+        
         // API: ログ取得
         this.app.get('/api/logs', (req, res) => {
             try {
                 const logStats = logger.getLogStats();
-                
+
                 if (!logStats.exists) {
                     return res.json({ error: 'ログファイルが見つかりません' });
                 }
@@ -136,9 +218,9 @@ class WebServer {
 
         // 404エラー
         this.app.use((req, res) => {
-            res.status(404).json({ 
+            res.status(404).json({
                 error: 'Not Found',
-                message: 'The requested resource was not found.' 
+                message: 'The requested resource was not found.'
             });
         });
     }
