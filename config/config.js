@@ -142,6 +142,7 @@ module.exports = {
 
         // RSSフィード設定
         feeds: [
+            //競馬
             {
                 name: "Netkeiba 国内最大級の競馬情報サイト",
                 url: "https://rss.netkeiba.com/?pid=rss_netkeiba&site=netkeiba",
@@ -152,6 +153,38 @@ module.exports = {
                 name: "競馬 - nikkansports.com",
                 url: "https://www.nikkansports.com/keiba/atom.xml",
                 channels: ["1365691475744260177"],
+                enabled: true
+            },
+            //サッカー
+            {
+                name: "J1 - nikkansports.com",
+                url: "https://www.nikkansports.com/soccer/jleague/j1/atom.xml",
+                channels: ["1404049528369184900"],
+                enabled: true
+            },
+            {
+                name: "サッカーキング - Yahoo!ニュース",
+                url: "https://news.yahoo.co.jp/rss/media/soccerk/all.xml",
+                channels: ["1404049528369184900"],
+                enabled: true
+            },
+            //野球
+            {
+                name: "プロ野球 - nikkansports.com",
+                url: "https://www.nikkansports.com/baseball/professional/atom.xml",
+                channels: ["1404065927971999814"],
+                enabled: true
+            },
+            {
+                name: "NPB公式ニュース",
+                url: "https://freefielder.jp/npbnews/feed/rss.xml",
+                channels: ["1404065927971999814"],
+                enabled: true
+            },
+            {
+                name: "NPB公式ニュース",
+                url: "https://freefielder.jp/npbnews/feed/team_rss.xml",
+                channels: ["1404065927971999814"],
                 enabled: true
             }
         ]
