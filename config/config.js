@@ -172,13 +172,13 @@ module.exports = {
             {
                 name: "プロ野球 - nikkansports.com",
                 url: "https://www.nikkansports.com/baseball/professional/atom.xml",
-                channels: ["1404065927971999814"],
+                channels: ["1404082803246632990"],
                 enabled: true
             },
             {
                 name: "Full-Count - Yahoo!ニュース",
                 url: "https://news.yahoo.co.jp/rss/media/fullcount/all.xml",
-                channels: ["1404065927971999814"],
+                channels: ["1404082803246632990"],
                 enabled: true
             },
             //
