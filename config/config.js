@@ -176,17 +176,11 @@ module.exports = {
                 enabled: true
             },
             {
-                name: "NPB公式ニュース",
-                url: "https://freefielder.jp/npbnews/feed/rss.xml",
+                name: "Full-Count - Yahoo!ニュース",
+                url: "https://news.yahoo.co.jp/rss/media/fullcount/all.xml",
                 channels: ["1404065927971999814"],
                 enabled: true
             },
-            {
-                name: "NPB公式ニュース",
-                url: "https://freefielder.jp/npbnews/feed/team_rss.xml",
-                channels: ["1404065927971999814"],
-                enabled: true
-            }
         ]
     },
     stickyMessages: {
