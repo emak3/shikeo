@@ -181,6 +181,7 @@ module.exports = {
                 channels: ["1404065927971999814"],
                 enabled: true
             },
+            //
         ]
     },
     stickyMessages: {
